@@ -31,6 +31,20 @@ function readNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function readYieldPercent(
+  trailingAnnualDividendYield: unknown,
+  dividendYield: unknown,
+): number | null {
+  const trailing = readNumber(trailingAnnualDividendYield);
+  if (trailing !== null) {
+    // trailingAnnualDividendYield is returned as a decimal (0.01 = 1%).
+    return trailing * 100;
+  }
+
+  // dividendYield is often already represented as a percentage value.
+  return readNumber(dividendYield);
+}
+
 function readErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -49,6 +63,9 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
     high: null,
     close: null,
     volume: null,
+    peRatio: null,
+    pbRatio: null,
+    dividendOrDistributionYield: null,
     rsi14: null,
     ma5: null,
     ma20: null,
@@ -68,6 +85,10 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
       regularMarketDayHigh?: number | null;
       regularMarketPrice?: number | null;
       regularMarketVolume?: number | null;
+      trailingPE?: number | null;
+      priceToBook?: number | null;
+      trailingAnnualDividendYield?: number | null;
+      dividendYield?: number | null;
     };
 
     row.open = readNumber(quote.regularMarketOpen);
@@ -75,6 +96,12 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
     row.high = readNumber(quote.regularMarketDayHigh);
     row.close = readNumber(quote.regularMarketPrice);
     row.volume = readNumber(quote.regularMarketVolume);
+    row.peRatio = readNumber(quote.trailingPE);
+    row.pbRatio = readNumber(quote.priceToBook);
+    row.dividendOrDistributionYield = readYieldPercent(
+      quote.trailingAnnualDividendYield,
+      quote.dividendYield,
+    );
   } catch (error) {
     quoteFailed = true;
     quoteError = readErrorMessage(error);

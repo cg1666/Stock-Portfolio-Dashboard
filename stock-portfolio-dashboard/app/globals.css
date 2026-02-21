@@ -63,6 +63,12 @@ body {
   font-weight: 600;
 }
 
+.table-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .portfolio-row,
 .ticker-row {
   display: flex;
@@ -111,6 +117,11 @@ button {
 .secondary-button {
   background: #e8e8ed;
   color: #1d1d1f;
+}
+
+.small-button {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
 }
 
 .danger-button {
@@ -167,6 +178,16 @@ tbody td {
   color: var(--primary);
   padding: 0;
   font-size: 0.9rem;
+}
+
+.sort-button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .muted-text {

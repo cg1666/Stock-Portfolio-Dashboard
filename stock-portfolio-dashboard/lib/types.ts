@@ -5,6 +5,9 @@ export type StockRow = {
   high: number | null;
   close: number | null;
   volume: number | null;
+  peRatio: number | null;
+  pbRatio: number | null;
+  dividendOrDistributionYield: number | null;
   rsi14: number | null;
   ma5: number | null;
   ma20: number | null;

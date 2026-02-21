@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import type { StockRow } from "@/lib/types";
 
 type StockComparisonTableProps = {
@@ -10,6 +11,49 @@ type StockComparisonTableProps = {
   onRemoveTicker: (ticker: string) => void;
   lastUpdated: string | null;
 };
+
+type SortKey = "peRatio" | "pbRatio" | "dividendOrDistributionYield";
+type SortDirection = "asc" | "desc";
+const SORT_STORAGE_KEY = "stock-dashboard-table-sort-v1";
+type SortState = {
+  key: SortKey | null;
+  direction: SortDirection;
+};
+
+function readInitialSortState(): SortState {
+  if (typeof window === "undefined") {
+    return { key: null, direction: "asc" };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SORT_STORAGE_KEY);
+    if (!raw) {
+      return { key: null, direction: "asc" };
+    }
+
+    const parsed = JSON.parse(raw) as {
+      sortKey?: SortKey | null;
+      sortDirection?: SortDirection;
+    };
+    const key: SortKey | null =
+      parsed.sortKey === "peRatio" ||
+      parsed.sortKey === "pbRatio" ||
+      parsed.sortKey === "dividendOrDistributionYield"
+        ? parsed.sortKey
+        : null;
+    const direction: SortDirection =
+      parsed.sortDirection === "asc" || parsed.sortDirection === "desc"
+        ? parsed.sortDirection
+        : "asc";
+
+    return {
+      key,
+      direction,
+    };
+  } catch {
+    return { key: null, direction: "asc" };
+  }
+}
 
 function formatNumber(value: number | null): string {
   if (value === null) {
@@ -25,6 +69,13 @@ function formatVolume(value: number | null): string {
     return "—";
   }
   return value.toLocaleString();
+}
+
+function formatPercent(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
 }
 
 function formatTimestamp(value: string | null): string {
@@ -55,13 +106,84 @@ export function StockComparisonTable({
   onRemoveTicker,
   lastUpdated,
 }: StockComparisonTableProps) {
-  const rowMap = new Map(rows.map((row) => [row.ticker, row]));
+  const [sortState, setSortState] = useState<SortState>(readInitialSortState);
+  const sortKey = sortState.key;
+  const sortDirection = sortState.direction;
+  const rowMap = useMemo(() => new Map(rows.map((row) => [row.ticker, row])), [rows]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      SORT_STORAGE_KEY,
+      JSON.stringify({
+        sortKey,
+        sortDirection,
+      }),
+    );
+  }, [sortDirection, sortKey]);
+
+  const displayedTickers = useMemo(() => {
+    if (!sortKey) {
+      return tickers;
+    }
+
+    const sorted = [...tickers];
+    sorted.sort((leftTicker, rightTicker) => {
+      const left = rowMap.get(leftTicker)?.[sortKey];
+      const right = rowMap.get(rightTicker)?.[sortKey];
+
+      // Keep missing values at the end so actionable data stays visible first.
+      if (left === null || left === undefined) {
+        return 1;
+      }
+      if (right === null || right === undefined) {
+        return -1;
+      }
+
+      if (left === right) {
+        return 0;
+      }
+
+      const delta = left - right;
+      return sortDirection === "asc" ? delta : -delta;
+    });
+
+    return sorted;
+  }, [sortDirection, sortKey, tickers, rowMap]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortState((prev) => ({
+        ...prev,
+        direction: prev.direction === "asc" ? "desc" : "asc",
+      }));
+      return;
+    }
+    setSortState({ key, direction: "asc" });
+  };
+
+  const sortLabel = (key: SortKey): string => {
+    if (sortKey !== key) {
+      return "";
+    }
+    return sortDirection === "asc" ? " ↑" : " ↓";
+  };
+
+  const resetSort = () => {
+    setSortState({ key: null, direction: "asc" });
+  };
 
   return (
     <section className="panel table-panel">
       <div className="section-header">
         <h2>Comparison Grid</h2>
-        <p className="muted-text">Last updated: {formatTimestamp(lastUpdated)}</p>
+        <div className="table-meta">
+          <p className="muted-text">Last updated: {formatTimestamp(lastUpdated)}</p>
+          {sortKey ? (
+            <button type="button" className="secondary-button small-button" onClick={resetSort}>
+              Reset Sort
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {error ? <p className="error-text">{error}</p> : null}
@@ -80,6 +202,25 @@ export function StockComparisonTable({
                 <th>High</th>
                 <th>Close</th>
                 <th>Volume</th>
+                <th>
+                  <button type="button" className="sort-button" onClick={() => toggleSort("peRatio")}>
+                    P/E{sortLabel("peRatio")}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-button" onClick={() => toggleSort("pbRatio")}>
+                    P/B{sortLabel("pbRatio")}
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="sort-button"
+                    onClick={() => toggleSort("dividendOrDistributionYield")}
+                  >
+                    Div/Dist Yield{sortLabel("dividendOrDistributionYield")}
+                  </button>
+                </th>
                 <th>RSI (14)</th>
                 <th>MA (5)</th>
                 <th>MA (20)</th>
@@ -88,7 +229,7 @@ export function StockComparisonTable({
               </tr>
             </thead>
             <tbody>
-              {tickers.map((ticker) => {
+              {displayedTickers.map((ticker) => {
                 const row = rowMap.get(ticker);
                 const hasError = row?.error;
 
@@ -100,6 +241,9 @@ export function StockComparisonTable({
                     <td>{formatNumber(row?.high ?? null)}</td>
                     <td>{formatNumber(row?.close ?? null)}</td>
                     <td>{formatVolume(row?.volume ?? null)}</td>
+                    <td>{formatNumber(row?.peRatio ?? null)}</td>
+                    <td>{formatNumber(row?.pbRatio ?? null)}</td>
+                    <td>{formatPercent(row?.dividendOrDistributionYield ?? null)}</td>
                     <td className={rsiClassName(row?.rsi14 ?? null)}>
                       {formatNumber(row?.rsi14 ?? null)}
                     </td>
