@@ -12,7 +12,7 @@ type StockComparisonTableProps = {
   lastUpdated: string | null;
 };
 
-type SortKey = "peRatio" | "pbRatio" | "dividendOrDistributionYield";
+type SortKey = "peRatio" | "pbRatio" | "dividendOrDistributionYield" | "rsi14";
 type SortDirection = "asc" | "desc";
 const SORT_STORAGE_KEY = "stock-dashboard-table-sort-v1";
 type SortState = {
@@ -38,7 +38,8 @@ function readInitialSortState(): SortState {
     const key: SortKey | null =
       parsed.sortKey === "peRatio" ||
       parsed.sortKey === "pbRatio" ||
-      parsed.sortKey === "dividendOrDistributionYield"
+      parsed.sortKey === "dividendOrDistributionYield" ||
+      parsed.sortKey === "rsi14"
         ? parsed.sortKey
         : null;
     const direction: SortDirection =
@@ -94,6 +95,23 @@ function rsiClassName(rsi: number | null): string {
   }
   if (rsi < 30) {
     return "cell-rsi-low";
+  }
+  return "cell-neutral";
+}
+
+function closeVsBollingerBandClassName(
+  close: number | null,
+  bbUpper: number | null,
+  bbLower: number | null,
+): string {
+  if (close === null || bbUpper === null || bbLower === null) {
+    return "cell-neutral";
+  }
+  if (close > bbUpper) {
+    return "cell-breakout-high";
+  }
+  if (close < bbLower) {
+    return "cell-breakout-low";
   }
   return "cell-neutral";
 }
@@ -221,10 +239,20 @@ export function StockComparisonTable({
                     Div/Dist Yield{sortLabel("dividendOrDistributionYield")}
                   </button>
                 </th>
-                <th>RSI (14)</th>
+                <th>
+                  <button type="button" className="sort-button" onClick={() => toggleSort("rsi14")}>
+                    RSI (14){sortLabel("rsi14")}
+                  </button>
+                </th>
                 <th>MA (5)</th>
                 <th>MA (20)</th>
                 <th>MA (50)</th>
+                <th>MACD</th>
+                <th>MACD Signal</th>
+                <th>MACD Hist</th>
+                <th>BB Upper</th>
+                <th>BB Middle</th>
+                <th>BB Lower</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -239,7 +267,15 @@ export function StockComparisonTable({
                     <td>{formatNumber(row?.open ?? null)}</td>
                     <td>{formatNumber(row?.low ?? null)}</td>
                     <td>{formatNumber(row?.high ?? null)}</td>
-                    <td>{formatNumber(row?.close ?? null)}</td>
+                    <td
+                      className={closeVsBollingerBandClassName(
+                        row?.close ?? null,
+                        row?.bbUpper ?? null,
+                        row?.bbLower ?? null,
+                      )}
+                    >
+                      {formatNumber(row?.close ?? null)}
+                    </td>
                     <td>{formatVolume(row?.volume ?? null)}</td>
                     <td>{formatNumber(row?.peRatio ?? null)}</td>
                     <td>{formatNumber(row?.pbRatio ?? null)}</td>
@@ -250,6 +286,12 @@ export function StockComparisonTable({
                     <td>{formatNumber(row?.ma5 ?? null)}</td>
                     <td>{formatNumber(row?.ma20 ?? null)}</td>
                     <td>{formatNumber(row?.ma50 ?? null)}</td>
+                    <td>{formatNumber(row?.macd ?? null)}</td>
+                    <td>{formatNumber(row?.macdSignal ?? null)}</td>
+                    <td>{formatNumber(row?.macdHistogram ?? null)}</td>
+                    <td>{formatNumber(row?.bbUpper ?? null)}</td>
+                    <td>{formatNumber(row?.bbMiddle ?? null)}</td>
+                    <td>{formatNumber(row?.bbLower ?? null)}</td>
                     <td>
                       <button
                         type="button"

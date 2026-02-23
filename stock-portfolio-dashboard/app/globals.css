@@ -215,6 +215,16 @@ tbody td {
   font-weight: 600;
 }
 
+.cell-breakout-high {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.cell-breakout-low {
+  color: var(--positive);
+  font-weight: 600;
+}
+
 .cell-neutral {
   color: inherit;
 }

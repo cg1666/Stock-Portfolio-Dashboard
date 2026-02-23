@@ -1,6 +1,11 @@
 import YahooFinance from "yahoo-finance2";
 import { NextResponse } from "next/server";
-import { calculateRsi, calculateSma } from "@/lib/indicators";
+import {
+  calculateBollingerBands,
+  calculateMacd,
+  calculateRsi,
+  calculateSma,
+} from "@/lib/indicators";
 import type { QuotesResponse, StockRow } from "@/lib/types";
 
 const LOOKBACK_DAYS = 120;
@@ -70,6 +75,12 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
     ma5: null,
     ma20: null,
     ma50: null,
+    macd: null,
+    macdSignal: null,
+    macdHistogram: null,
+    bbUpper: null,
+    bbMiddle: null,
+    bbLower: null,
   };
 
   let quoteFailed = false;
@@ -126,6 +137,15 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
     row.ma5 = calculateSma(closes, 5);
     row.ma20 = calculateSma(closes, 20);
     row.ma50 = calculateSma(closes, 50);
+    const macd = calculateMacd(closes, 12, 26, 9);
+    row.macd = macd.macd;
+    row.macdSignal = macd.signal;
+    row.macdHistogram = macd.histogram;
+
+    const bollinger = calculateBollingerBands(closes, 20, 2);
+    row.bbUpper = bollinger.upper;
+    row.bbMiddle = bollinger.middle;
+    row.bbLower = bollinger.lower;
   } catch (error) {
     historicalFailed = true;
     historicalError = readErrorMessage(error);

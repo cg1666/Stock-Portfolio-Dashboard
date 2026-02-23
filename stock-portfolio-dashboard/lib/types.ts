@@ -12,6 +12,12 @@ export type StockRow = {
   ma5: number | null;
   ma20: number | null;
   ma50: number | null;
+  macd: number | null;
+  macdSignal: number | null;
+  macdHistogram: number | null;
+  bbUpper: number | null;
+  bbMiddle: number | null;
+  bbLower: number | null;
   error?: string;
 };
 
