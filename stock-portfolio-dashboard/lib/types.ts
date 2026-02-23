@@ -4,6 +4,8 @@ export type StockRow = {
   low: number | null;
   high: number | null;
   close: number | null;
+  change: number | null;
+  changePercent: number | null;
   volume: number | null;
   peRatio: number | null;
   pbRatio: number | null;

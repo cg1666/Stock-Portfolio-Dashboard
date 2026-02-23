@@ -12,7 +12,13 @@ type StockComparisonTableProps = {
   lastUpdated: string | null;
 };
 
-type SortKey = "peRatio" | "pbRatio" | "dividendOrDistributionYield" | "rsi14";
+type SortKey =
+  | "change"
+  | "changePercent"
+  | "peRatio"
+  | "pbRatio"
+  | "dividendOrDistributionYield"
+  | "rsi14";
 type SortDirection = "asc" | "desc";
 const SORT_STORAGE_KEY = "stock-dashboard-table-sort-v1";
 type SortState = {
@@ -36,6 +42,8 @@ function readInitialSortState(): SortState {
       sortDirection?: SortDirection;
     };
     const key: SortKey | null =
+      parsed.sortKey === "change" ||
+      parsed.sortKey === "changePercent" ||
       parsed.sortKey === "peRatio" ||
       parsed.sortKey === "pbRatio" ||
       parsed.sortKey === "dividendOrDistributionYield" ||
@@ -65,6 +73,14 @@ function formatNumber(value: number | null): string {
   });
 }
 
+function formatSignedNumber(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
+  // Prefix positives so gain/loss direction is obvious at a glance.
+  return `${value > 0 ? "+" : ""}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
 function formatVolume(value: number | null): string {
   if (value === null) {
     return "—";
@@ -77,6 +93,14 @@ function formatPercent(value: number | null): string {
     return "—";
   }
   return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+}
+
+function formatSignedPercent(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
+  // Use explicit sign to match the Change column formatting.
+  return `${value > 0 ? "+" : ""}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
 }
 
 function formatTimestamp(value: string | null): string {
@@ -114,6 +138,13 @@ function closeVsBollingerBandClassName(
     return "cell-breakout-low";
   }
   return "cell-neutral";
+}
+
+function changeClassName(change: number | null): string {
+  if (change === null || change === 0) {
+    return "cell-neutral";
+  }
+  return change > 0 ? "cell-change-up" : "cell-change-down";
 }
 
 export function StockComparisonTable({
@@ -219,6 +250,20 @@ export function StockComparisonTable({
                 <th>Low</th>
                 <th>High</th>
                 <th>Close</th>
+                <th>
+                  <button type="button" className="sort-button" onClick={() => toggleSort("change")}>
+                    Change{sortLabel("change")}
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="sort-button"
+                    onClick={() => toggleSort("changePercent")}
+                  >
+                    Change (%) {sortLabel("changePercent")}
+                  </button>
+                </th>
                 <th>Volume</th>
                 <th>
                   <button type="button" className="sort-button" onClick={() => toggleSort("peRatio")}>
@@ -275,6 +320,12 @@ export function StockComparisonTable({
                       )}
                     >
                       {formatNumber(row?.close ?? null)}
+                    </td>
+                    <td className={changeClassName(row?.change ?? null)}>
+                      {formatSignedNumber(row?.change ?? null)}
+                    </td>
+                    <td className={changeClassName(row?.changePercent ?? null)}>
+                      {formatSignedPercent(row?.changePercent ?? null)}
                     </td>
                     <td>{formatVolume(row?.volume ?? null)}</td>
                     <td>{formatNumber(row?.peRatio ?? null)}</td>

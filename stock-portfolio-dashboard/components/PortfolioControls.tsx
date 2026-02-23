@@ -5,8 +5,10 @@ import type { Portfolio } from "@/lib/portfolioStore";
 type PortfolioControlsProps = {
   portfolios: Portfolio[];
   activePortfolioId: string;
+  activePortfolioName: string;
   onSelectPortfolio: (portfolioId: string) => void;
   onCreatePortfolio: (name: string) => void;
+  onRenameActivePortfolio: (name: string) => void;
   onDeleteActivePortfolio: () => void;
   canDelete: boolean;
 };
@@ -14,8 +16,10 @@ type PortfolioControlsProps = {
 export function PortfolioControls({
   portfolios,
   activePortfolioId,
+  activePortfolioName,
   onSelectPortfolio,
   onCreatePortfolio,
+  onRenameActivePortfolio,
   onDeleteActivePortfolio,
   canDelete,
 }: PortfolioControlsProps) {
@@ -50,6 +54,18 @@ export function PortfolioControls({
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => {
+            const name = window.prompt("Rename portfolio", activePortfolioName);
+            if (name) {
+              onRenameActivePortfolio(name);
+            }
+          }}
+        >
+          Rename
+        </button>
         <button
           type="button"
           className="danger-button"

@@ -29,6 +29,7 @@ export function DashboardClient() {
     createPortfolio,
     deletePortfolio,
     setActivePortfolio,
+    renamePortfolio,
     addTicker,
     removeTicker,
   } = usePortfolioStore();
@@ -118,8 +119,12 @@ export function DashboardClient() {
       <PortfolioControls
         portfolios={state.portfolios}
         activePortfolioId={activePortfolio.id}
+        activePortfolioName={activePortfolio.name}
         onSelectPortfolio={setActivePortfolio}
         onCreatePortfolio={createPortfolio}
+        onRenameActivePortfolio={(name) => {
+          renamePortfolio(activePortfolio.id, name);
+        }}
         onDeleteActivePortfolio={() => {
           if (
             window.confirm(

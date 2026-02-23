@@ -225,6 +225,16 @@ tbody td {
   font-weight: 600;
 }
 
+.cell-change-up {
+  color: var(--positive);
+  font-weight: 600;
+}
+
+.cell-change-down {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .cell-neutral {
   color: inherit;
 }

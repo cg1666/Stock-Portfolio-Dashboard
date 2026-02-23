@@ -117,6 +117,20 @@ export function usePortfolioStore() {
     setState((prev) => ({ ...prev, activePortfolioId: portfolioId }));
   };
 
+  const renamePortfolio = (portfolioId: string, name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return;
+    }
+
+    setState((prev) => ({
+      ...prev,
+      portfolios: prev.portfolios.map((portfolio) =>
+        portfolio.id === portfolioId ? { ...portfolio, name: trimmedName } : portfolio,
+      ),
+    }));
+  };
+
   const addTicker = (tickerInput: string) => {
     const ticker = normalizeTicker(tickerInput);
     if (!ticker) {
@@ -166,6 +180,7 @@ export function usePortfolioStore() {
     createPortfolio,
     deletePortfolio,
     setActivePortfolio,
+    renamePortfolio,
     addTicker,
     removeTicker,
   };

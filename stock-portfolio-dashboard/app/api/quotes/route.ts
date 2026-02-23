@@ -67,6 +67,8 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
     low: null,
     high: null,
     close: null,
+    change: null,
+    changePercent: null,
     volume: null,
     peRatio: null,
     pbRatio: null,
@@ -95,6 +97,8 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
       regularMarketDayLow?: number | null;
       regularMarketDayHigh?: number | null;
       regularMarketPrice?: number | null;
+      regularMarketChange?: number | null;
+      regularMarketChangePercent?: number | null;
       regularMarketVolume?: number | null;
       trailingPE?: number | null;
       priceToBook?: number | null;
@@ -106,6 +110,8 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
     row.low = readNumber(quote.regularMarketDayLow);
     row.high = readNumber(quote.regularMarketDayHigh);
     row.close = readNumber(quote.regularMarketPrice);
+    row.change = readNumber(quote.regularMarketChange);
+    row.changePercent = readNumber(quote.regularMarketChangePercent);
     row.volume = readNumber(quote.regularMarketVolume);
     row.peRatio = readNumber(quote.trailingPE);
     row.pbRatio = readNumber(quote.priceToBook);
