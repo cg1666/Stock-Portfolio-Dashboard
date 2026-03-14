@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { StockRow } from "@/lib/types";
 
 type StockComparisonTableProps = {
@@ -9,6 +10,7 @@ type StockComparisonTableProps = {
   isLoading: boolean;
   error: string | null;
   onRemoveTicker: (ticker: string) => void;
+  onMoveTicker: (ticker: string, direction: "up" | "down") => void;
   lastUpdated: string | null;
 };
 
@@ -153,6 +155,7 @@ export function StockComparisonTable({
   isLoading,
   error,
   onRemoveTicker,
+  onMoveTicker,
   lastUpdated,
 }: StockComparisonTableProps) {
   const [sortState, setSortState] = useState<SortState>(readInitialSortState);
@@ -305,10 +308,22 @@ export function StockComparisonTable({
               {displayedTickers.map((ticker) => {
                 const row = rowMap.get(ticker);
                 const hasError = row?.error;
+                const tickerIndex = tickers.indexOf(ticker);
+                const canMoveUp = tickerIndex > 0;
+                const canMoveDown = tickerIndex !== -1 && tickerIndex < tickers.length - 1;
+                const disableReorderWhileSorted = Boolean(sortKey);
+                const reorderDisabledReason = disableReorderWhileSorted
+                  ? "Reset sort to reorder tickers."
+                  : undefined;
 
                 return (
                   <tr key={ticker}>
-                    <td className="ticker-cell">{ticker}</td>
+                    <td className="ticker-cell">
+                      {/* Open dedicated candlestick page for deeper ticker analysis. */}
+                      <Link href={`/ticker/${encodeURIComponent(ticker)}`} className="ticker-link">
+                        {ticker}
+                      </Link>
+                    </td>
                     <td>{formatNumber(row?.open ?? null)}</td>
                     <td>{formatNumber(row?.low ?? null)}</td>
                     <td>{formatNumber(row?.high ?? null)}</td>
@@ -344,6 +359,28 @@ export function StockComparisonTable({
                     <td>{formatNumber(row?.bbMiddle ?? null)}</td>
                     <td>{formatNumber(row?.bbLower ?? null)}</td>
                     <td>
+                      <div className="action-buttons">
+                        <button
+                          type="button"
+                          className="reorder-button"
+                          onClick={() => onMoveTicker(ticker, "up")}
+                          disabled={!canMoveUp || disableReorderWhileSorted}
+                          title={reorderDisabledReason}
+                          aria-label={`Move ${ticker} up`}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="reorder-button"
+                          onClick={() => onMoveTicker(ticker, "down")}
+                          disabled={!canMoveDown || disableReorderWhileSorted}
+                          title={reorderDisabledReason}
+                          aria-label={`Move ${ticker} down`}
+                        >
+                          ↓
+                        </button>
+                      </div>
                       <button
                         type="button"
                         className="link-button"

@@ -174,6 +174,46 @@ export function usePortfolioStore() {
     });
   };
 
+  const moveTicker = (tickerInput: string, direction: "up" | "down") => {
+    const ticker = normalizeTicker(tickerInput);
+    if (!ticker) {
+      return;
+    }
+
+    setState((prev) => {
+      return {
+        ...prev,
+        portfolios: prev.portfolios.map((portfolio) => {
+          if (portfolio.id !== prev.activePortfolioId) {
+            return portfolio;
+          }
+
+          const currentIndex = portfolio.tickers.findIndex((symbol) => symbol === ticker);
+          if (currentIndex === -1) {
+            return portfolio;
+          }
+
+          const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+          if (targetIndex < 0 || targetIndex >= portfolio.tickers.length) {
+            return portfolio;
+          }
+
+          const nextTickers = [...portfolio.tickers];
+          // Swap once so move operations remain predictable and stable.
+          [nextTickers[currentIndex], nextTickers[targetIndex]] = [
+            nextTickers[targetIndex],
+            nextTickers[currentIndex],
+          ];
+
+          return {
+            ...portfolio,
+            tickers: nextTickers,
+          };
+        }),
+      };
+    });
+  };
+
   return {
     state,
     activePortfolio,
@@ -183,5 +223,6 @@ export function usePortfolioStore() {
     renamePortfolio,
     addTicker,
     removeTicker,
+    moveTicker,
   };
 }

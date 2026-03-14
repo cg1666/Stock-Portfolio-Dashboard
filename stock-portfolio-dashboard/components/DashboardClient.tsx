@@ -32,6 +32,7 @@ export function DashboardClient() {
     renamePortfolio,
     addTicker,
     removeTicker,
+    moveTicker,
   } = usePortfolioStore();
 
   const [rows, setRows] = useState<StockRow[]>([]);
@@ -62,9 +63,16 @@ export function DashboardClient() {
     }
 
     let isCancelled = false;
+    let isFetching = false;
 
     const load = async () => {
+      // Skip this cycle if the previous refresh is still in-flight.
+      if (isFetching) {
+        return;
+      }
+
       try {
+        isFetching = true;
         setIsLoading(true);
         const data = await fetchQuotes(tickers);
         if (isCancelled) {
@@ -81,6 +89,7 @@ export function DashboardClient() {
           fetchError instanceof Error ? fetchError.message : "Unknown error while loading quotes.";
         setError(message);
       } finally {
+        isFetching = false;
         if (!isCancelled) {
           setIsLoading(false);
         }
@@ -145,6 +154,7 @@ export function DashboardClient() {
         isLoading={isLoading}
         error={error}
         onRemoveTicker={removeTicker}
+        onMoveTicker={moveTicker}
         lastUpdated={lastUpdated}
       />
     </main>

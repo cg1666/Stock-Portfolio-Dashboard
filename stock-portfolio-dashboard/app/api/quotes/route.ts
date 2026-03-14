@@ -9,7 +9,8 @@ import {
 import type { QuotesResponse, StockRow } from "@/lib/types";
 
 const LOOKBACK_DAYS = 120;
-const MAX_SYMBOLS = 30;
+const MAX_SYMBOLS = 100;
+const SYMBOL_CONCURRENCY = 6;
 const yahooFinance = new YahooFinance({
   // Suppress non-fatal library notices in server logs.
   suppressNotices: ["ripHistorical", "yahooSurvey"],
@@ -57,9 +58,95 @@ function readErrorMessage(error: unknown): string {
   return "Unknown Yahoo Finance error.";
 }
 
+async function runWithConcurrency<TItem, TResult>(
+  items: TItem[],
+  limit: number,
+  task: (item: TItem) => Promise<TResult>,
+): Promise<TResult[]> {
+  const results: TResult[] = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const currentIndex = index;
+      index += 1;
+      results[currentIndex] = await task(items[currentIndex]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+async function fetchQuoteMetrics(symbol: string) {
+  const quoteRaw = await yahooFinance.quote(symbol);
+  const quote = quoteRaw as {
+    regularMarketOpen?: number | null;
+    regularMarketDayLow?: number | null;
+    regularMarketDayHigh?: number | null;
+    regularMarketPrice?: number | null;
+    regularMarketChange?: number | null;
+    regularMarketChangePercent?: number | null;
+    regularMarketVolume?: number | null;
+    trailingPE?: number | null;
+    priceToBook?: number | null;
+    trailingAnnualDividendYield?: number | null;
+    dividendYield?: number | null;
+  };
+
+  return {
+    open: readNumber(quote.regularMarketOpen),
+    low: readNumber(quote.regularMarketDayLow),
+    high: readNumber(quote.regularMarketDayHigh),
+    close: readNumber(quote.regularMarketPrice),
+    change: readNumber(quote.regularMarketChange),
+    changePercent: readNumber(quote.regularMarketChangePercent),
+    volume: readNumber(quote.regularMarketVolume),
+    peRatio: readNumber(quote.trailingPE),
+    pbRatio: readNumber(quote.priceToBook),
+    dividendOrDistributionYield: readYieldPercent(
+      quote.trailingAnnualDividendYield,
+      quote.dividendYield,
+    ),
+  };
+}
+
+async function fetchHistoricalIndicators(symbol: string, period1: Date, period2: Date) {
+  const chart = await yahooFinance.chart(symbol, {
+    period1,
+    period2,
+    interval: "1d",
+  });
+  const quotes = Array.isArray(chart?.quotes)
+    ? (chart.quotes as Array<{ close?: number | null }>)
+    : [];
+
+  const closes = quotes
+    .map((candle) => readNumber(candle.close))
+    .filter((value): value is number => value !== null);
+
+  // Some symbols can return sparse data, so indicators may intentionally be null.
+  const macd = calculateMacd(closes, 12, 26, 9);
+  const bollinger = calculateBollingerBands(closes, 20, 2);
+  return {
+    rsi14: calculateRsi(closes, 14),
+    ma5: calculateSma(closes, 5),
+    ma20: calculateSma(closes, 20),
+    ma50: calculateSma(closes, 50),
+    macd: macd.macd,
+    macdSignal: macd.signal,
+    macdHistogram: macd.histogram,
+    bbUpper: bollinger.upper,
+    bbMiddle: bollinger.middle,
+    bbLower: bollinger.lower,
+  };
+}
+
 async function buildStockRow(ticker: string): Promise<StockRow> {
   const period1 = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
   const period2 = new Date();
+  const alternateTicker = ticker.includes(".") ? ticker.replace(".", "-") : null;
 
   const row: StockRow = {
     ticker,
@@ -91,70 +178,36 @@ async function buildStockRow(ticker: string): Promise<StockRow> {
   let historicalError = "";
 
   try {
-    const quoteRaw = await yahooFinance.quote(ticker);
-    const quote = quoteRaw as {
-      regularMarketOpen?: number | null;
-      regularMarketDayLow?: number | null;
-      regularMarketDayHigh?: number | null;
-      regularMarketPrice?: number | null;
-      regularMarketChange?: number | null;
-      regularMarketChangePercent?: number | null;
-      regularMarketVolume?: number | null;
-      trailingPE?: number | null;
-      priceToBook?: number | null;
-      trailingAnnualDividendYield?: number | null;
-      dividendYield?: number | null;
-    };
-
-    row.open = readNumber(quote.regularMarketOpen);
-    row.low = readNumber(quote.regularMarketDayLow);
-    row.high = readNumber(quote.regularMarketDayHigh);
-    row.close = readNumber(quote.regularMarketPrice);
-    row.change = readNumber(quote.regularMarketChange);
-    row.changePercent = readNumber(quote.regularMarketChangePercent);
-    row.volume = readNumber(quote.regularMarketVolume);
-    row.peRatio = readNumber(quote.trailingPE);
-    row.pbRatio = readNumber(quote.priceToBook);
-    row.dividendOrDistributionYield = readYieldPercent(
-      quote.trailingAnnualDividendYield,
-      quote.dividendYield,
-    );
+    Object.assign(row, await fetchQuoteMetrics(ticker));
   } catch (error) {
-    quoteFailed = true;
-    quoteError = readErrorMessage(error);
+    if (alternateTicker) {
+      try {
+        // Retry common class-share format (e.g. BRK.B -> BRK-B) for Yahoo compatibility.
+        Object.assign(row, await fetchQuoteMetrics(alternateTicker));
+      } catch (retryError) {
+        quoteFailed = true;
+        quoteError = readErrorMessage(retryError);
+      }
+    } else {
+      quoteFailed = true;
+      quoteError = readErrorMessage(error);
+    }
   }
 
   try {
-    const historicalRaw = await yahooFinance.historical(ticker, {
-      period1,
-      period2,
-      interval: "1d",
-    });
-    const historical = Array.isArray(historicalRaw)
-      ? (historicalRaw as Array<{ close?: number | null }>)
-      : [];
-
-    const closes = historical
-      .map((candle) => readNumber(candle.close))
-      .filter((value): value is number => value !== null);
-
-    // Some symbols can return sparse data, so indicators may intentionally be null.
-    row.rsi14 = calculateRsi(closes, 14);
-    row.ma5 = calculateSma(closes, 5);
-    row.ma20 = calculateSma(closes, 20);
-    row.ma50 = calculateSma(closes, 50);
-    const macd = calculateMacd(closes, 12, 26, 9);
-    row.macd = macd.macd;
-    row.macdSignal = macd.signal;
-    row.macdHistogram = macd.histogram;
-
-    const bollinger = calculateBollingerBands(closes, 20, 2);
-    row.bbUpper = bollinger.upper;
-    row.bbMiddle = bollinger.middle;
-    row.bbLower = bollinger.lower;
+    Object.assign(row, await fetchHistoricalIndicators(ticker, period1, period2));
   } catch (error) {
-    historicalFailed = true;
-    historicalError = readErrorMessage(error);
+    if (alternateTicker) {
+      try {
+        Object.assign(row, await fetchHistoricalIndicators(alternateTicker, period1, period2));
+      } catch (retryError) {
+        historicalFailed = true;
+        historicalError = readErrorMessage(retryError);
+      }
+    } else {
+      historicalFailed = true;
+      historicalError = readErrorMessage(error);
+    }
   }
 
   if (quoteFailed && historicalFailed) {
@@ -177,7 +230,9 @@ export async function GET(request: Request) {
     );
   }
 
-  const rows = await Promise.all(symbols.map((ticker) => buildStockRow(ticker)));
+  const rows = await runWithConcurrency(symbols, SYMBOL_CONCURRENCY, (ticker) =>
+    buildStockRow(ticker),
+  );
 
   return NextResponse.json<QuotesResponse>({
     asOf: new Date().toISOString(),
