@@ -15,6 +15,7 @@ type Candle = {
 };
 type OverlayState = {
   volume: boolean;
+  macd: boolean;
   ma20: boolean;
   ma50: boolean;
   ma200: boolean;
@@ -33,6 +34,7 @@ const PERIOD_OPTIONS: Array<{ value: PeriodOption; label: string }> = [
 ];
 const OVERLAY_OPTIONS: Array<{ key: keyof OverlayState; label: string }> = [
   { key: "volume", label: "Volume" },
+  { key: "macd", label: "MACD" },
   { key: "ma20", label: "MA20" },
   { key: "ma50", label: "MA50" },
   { key: "ma200", label: "MA200" },
@@ -42,6 +44,27 @@ const OVERLAY_OPTIONS: Array<{ key: keyof OverlayState; label: string }> = [
 
 function formatPrice(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function formatAxisPrice(value: number): string {
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
+
+function formatVolumeCompact(value: number): string {
+  const absValue = Math.abs(value);
+  if (absValue >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 0 })}B`;
+  }
+  if (absValue >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 0 })}M`;
+  }
+  if (absValue >= 1_000) {
+    return `${(value / 1_000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K`;
+  }
+  return Math.round(value).toLocaleString();
 }
 
 function buildSmaSeries(candles: Candle[], period: number): Array<number | null> {
@@ -84,6 +107,62 @@ function buildBollingerBandSeries(
   });
 
   return { upper, lower };
+}
+
+function buildEmaSeries(values: number[], period: number): Array<number | null> {
+  const ema: Array<number | null> = new Array(values.length).fill(null);
+  if (values.length < period) {
+    return ema;
+  }
+
+  const seed = values.slice(0, period).reduce((acc, value) => acc + value, 0) / period;
+  ema[period - 1] = seed;
+  const smoothing = 2 / (period + 1);
+
+  for (let index = period; index < values.length; index += 1) {
+    const previous = ema[index - 1] ?? seed;
+    ema[index] = values[index] * smoothing + previous * (1 - smoothing);
+  }
+
+  return ema;
+}
+
+function buildEmaSeriesFromNullable(
+  values: Array<number | null>,
+  period: number,
+): Array<number | null> {
+  const firstIndex = values.findIndex((value) => value !== null);
+  if (firstIndex === -1) {
+    return new Array(values.length).fill(null);
+  }
+
+  const numericTail = values.slice(firstIndex).map((value) => value as number);
+  const emaTail = buildEmaSeries(numericTail, period);
+  return [
+    ...new Array(firstIndex).fill(null),
+    ...emaTail,
+  ] as Array<number | null>;
+}
+
+function buildMacdSeries(candles: Candle[]) {
+  const closes = candles.map((candle) => candle.close);
+  const fast = buildEmaSeries(closes, 12);
+  const slow = buildEmaSeries(closes, 26);
+  const macd = closes.map((_, index) => {
+    if (fast[index] === null || slow[index] === null) {
+      return null;
+    }
+    return (fast[index] as number) - (slow[index] as number);
+  });
+  const signal = buildEmaSeriesFromNullable(macd, 9);
+  const histogram = macd.map((value, index) => {
+    if (value === null || signal[index] === null) {
+      return null;
+    }
+    return value - (signal[index] as number);
+  });
+
+  return { macd, signal, histogram };
 }
 
 function buildLinePath(
@@ -157,15 +236,28 @@ function CandlestickChart({
   }
 
   const width = Math.max(840, candles.length * 10);
-  const height = 500;
+  const height = 560;
   const padding = { top: 20, right: 16, bottom: 26, left: 46 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
-  const volumePanelHeight = Math.max(92, innerHeight * 0.22);
-  const pricePanelHeight = innerHeight - volumePanelHeight - 12;
+  const panelGap = 12;
+  const lowerPanelHeight = 92;
+  const enabledLowerPanels = (overlays.volume ? 1 : 0) + (overlays.macd ? 1 : 0);
+  const totalLowerHeight =
+    enabledLowerPanels === 0
+      ? 0
+      : enabledLowerPanels * lowerPanelHeight + (enabledLowerPanels - 1) * panelGap;
+  const pricePanelHeight = Math.max(180, innerHeight - totalLowerHeight);
   const pricePanelBottom = padding.top + pricePanelHeight;
-  const volumeTop = pricePanelBottom + 12;
-  const volumeBottom = height - padding.bottom;
+  let nextLowerPanelTop = pricePanelBottom + (enabledLowerPanels > 0 ? panelGap : 0);
+  const volumeTop = overlays.volume ? nextLowerPanelTop : null;
+  const volumeBottom = overlays.volume && volumeTop !== null ? volumeTop + lowerPanelHeight : null;
+  if (overlays.volume && volumeBottom !== null) {
+    nextLowerPanelTop = volumeBottom + (overlays.macd ? panelGap : 0);
+  }
+  const macdTop = overlays.macd ? nextLowerPanelTop : null;
+  const macdBottom = overlays.macd && macdTop !== null ? macdTop + lowerPanelHeight : null;
+  const chartBottom = macdBottom ?? volumeBottom ?? pricePanelBottom;
   const step = innerWidth / candles.length;
   const bodyWidth = Math.max(3, Math.min(8, step * 0.65));
 
@@ -174,7 +266,7 @@ function CandlestickChart({
   const maxPrice = Math.max(...highs);
   const minPrice = Math.min(...lows);
   const pricePadding = (maxPrice - minPrice || 1) * 0.05;
-  const axisIncrement = 5;
+  const axisIncrement = 0.5;
   const topPrice = Math.ceil((maxPrice + pricePadding) / axisIncrement) * axisIncrement;
   const bottomPrice = Math.floor((minPrice - pricePadding) / axisIncrement) * axisIncrement;
 
@@ -186,8 +278,30 @@ function CandlestickChart({
   const volumes = candles.map((candle) => candle.volume);
   const maxVolume = Math.max(...volumes, 1);
   const yForVolume = (volume: number) => {
+    if (volumeTop === null || volumeBottom === null) {
+      return pricePanelBottom;
+    }
     const ratio = volume / maxVolume;
-    return volumeBottom - ratio * volumePanelHeight;
+    return volumeBottom - ratio * lowerPanelHeight;
+  };
+  const macdSeries = buildMacdSeries(candles);
+  const macdValues = [
+    ...macdSeries.macd.filter((value): value is number => value !== null),
+    ...macdSeries.signal.filter((value): value is number => value !== null),
+    ...macdSeries.histogram.filter((value): value is number => value !== null),
+    0,
+  ];
+  const macdMax = Math.max(...macdValues);
+  const macdMin = Math.min(...macdValues);
+  const macdPadding = (macdMax - macdMin || 1) * 0.08;
+  const macdTopValue = macdMax + macdPadding;
+  const macdBottomValue = macdMin - macdPadding;
+  const yForMacd = (value: number) => {
+    if (macdTop === null || macdBottom === null) {
+      return pricePanelBottom;
+    }
+    const ratio = (macdTopValue - value) / (macdTopValue - macdBottomValue || 1);
+    return macdTop + ratio * lowerPanelHeight;
   };
 
   const ma20 = buildSmaSeries(candles, 20);
@@ -203,26 +317,32 @@ function CandlestickChart({
 
   const volumeGridSteps = 3;
   const verticalGridSteps = Math.min(8, Math.max(4, Math.floor(candles.length / 20)));
-  const priceTicks = [];
-  for (let value = topPrice; value >= bottomPrice; value -= axisIncrement) {
-    const ratio = (topPrice - value) / (topPrice - bottomPrice || 1);
+  const horizontalGridSteps = 20;
+  const priceTicks = Array.from({ length: horizontalGridSteps + 1 }).map((_, index) => {
+    const ratio = index / horizontalGridSteps;
+    const value = topPrice - (topPrice - bottomPrice) * ratio;
     const y = padding.top + pricePanelHeight * ratio;
-    priceTicks.push({ value, y });
-  }
-  if (priceTicks.length < 2) {
-    priceTicks.push({ value: bottomPrice, y: pricePanelBottom });
-  }
-  const horizontalGridSteps = Math.max(1, priceTicks.length - 1);
+    return { value, y };
+  });
   const monthTicks = buildMonthTicks(candles, xAt);
   const volumeTicks = Array.from({ length: volumeGridSteps + 1 }).map((_, index) => {
     const ratio = index / volumeGridSteps;
     const value = maxVolume * (1 - ratio);
-    const y = volumeTop + volumePanelHeight * ratio;
+    const y = (volumeTop ?? pricePanelBottom) + lowerPanelHeight * ratio;
+    return { value, y };
+  });
+  const macdTicks = Array.from({ length: volumeGridSteps + 1 }).map((_, index) => {
+    const ratio = index / volumeGridSteps;
+    const value = macdTopValue - (macdTopValue - macdBottomValue) * ratio;
+    const y = (macdTop ?? pricePanelBottom) + lowerPanelHeight * ratio;
     return { value, y };
   });
   const hoveredCandle = hoverIndex === null ? null : candles[hoverIndex];
   const hoveredBbUpper = hoverIndex === null ? null : bollingerBands.upper[hoverIndex];
   const hoveredBbLower = hoverIndex === null ? null : bollingerBands.lower[hoverIndex];
+  const hoveredMacd = hoverIndex === null ? null : macdSeries.macd[hoverIndex];
+  const hoveredMacdSignal = hoverIndex === null ? null : macdSeries.signal[hoverIndex];
+  const hoveredMacdHistogram = hoverIndex === null ? null : macdSeries.histogram[hoverIndex];
   const crosshairX = hoverIndex === null ? null : xAt(hoverIndex);
   const crosshairCloseY =
     hoveredCandle && crosshairX !== null ? yForPrice(hoveredCandle.close) : null;
@@ -236,6 +356,9 @@ function CandlestickChart({
         `V: ${Math.round(hoveredCandle.volume).toLocaleString()}`,
         `BB U: ${hoveredBbUpper === null ? "—" : formatPrice(hoveredBbUpper)}`,
         `BB L: ${hoveredBbLower === null ? "—" : formatPrice(hoveredBbLower)}`,
+        `MACD: ${hoveredMacd === null ? "—" : formatPrice(hoveredMacd)}`,
+        `Signal: ${hoveredMacdSignal === null ? "—" : formatPrice(hoveredMacdSignal)}`,
+        `Hist: ${hoveredMacdHistogram === null ? "—" : formatPrice(hoveredMacdHistogram)}`,
       ]
     : [];
   const longestRowLength = tooltipRows.reduce(
@@ -287,10 +410,25 @@ function CandlestickChart({
         })}
         {overlays.volume
           ? Array.from({ length: volumeGridSteps + 1 }).map((_, index) => {
-              const y = volumeTop + (volumePanelHeight / volumeGridSteps) * index;
+              const y = (volumeTop ?? pricePanelBottom) + (lowerPanelHeight / volumeGridSteps) * index;
               return (
                 <line
                   key={`grid-vh-${index}`}
+                  x1={padding.left}
+                  y1={y}
+                  x2={width - padding.right}
+                  y2={y}
+                  className="chart-grid-line"
+                />
+              );
+            })
+          : null}
+        {overlays.macd
+          ? Array.from({ length: volumeGridSteps + 1 }).map((_, index) => {
+              const y = (macdTop ?? pricePanelBottom) + (lowerPanelHeight / volumeGridSteps) * index;
+              return (
+                <line
+                  key={`grid-mh-${index}`}
                   x1={padding.left}
                   y1={y}
                   x2={width - padding.right}
@@ -308,7 +446,7 @@ function CandlestickChart({
               x1={x}
               y1={padding.top}
               x2={x}
-              y2={overlays.volume ? volumeBottom : pricePanelBottom}
+              y2={chartBottom}
               className="chart-grid-line"
             />
           );
@@ -332,7 +470,7 @@ function CandlestickChart({
           <>
             <line
               x1={padding.left}
-              y1={volumeTop}
+              y1={volumeTop ?? pricePanelBottom}
               x2={padding.left}
               y2={volumeBottom}
               className="chart-axis"
@@ -343,6 +481,31 @@ function CandlestickChart({
               x2={width - padding.right}
               y2={volumeBottom}
               className="chart-axis"
+            />
+          </>
+        ) : null}
+        {overlays.macd && macdTop !== null && macdBottom !== null ? (
+          <>
+            <line
+              x1={padding.left}
+              y1={macdTop}
+              x2={padding.left}
+              y2={macdBottom}
+              className="chart-axis"
+            />
+            <line
+              x1={padding.left}
+              y1={macdBottom}
+              x2={width - padding.right}
+              y2={macdBottom}
+              className="chart-axis"
+            />
+            <line
+              x1={padding.left}
+              y1={yForMacd(0)}
+              x2={width - padding.right}
+              y2={yForMacd(0)}
+              className="chart-macd-zero"
             />
           </>
         ) : null}
@@ -386,18 +549,47 @@ function CandlestickChart({
             </g>
           );
         })}
+        {overlays.macd
+          ? candles.map((candle, index) => {
+              const x = xAt(index);
+              const value = macdSeries.histogram[index];
+              if (value === null) {
+                return null;
+              }
+              const zeroY = yForMacd(0);
+              const valueY = yForMacd(value);
+              const barY = Math.min(zeroY, valueY);
+              const barHeight = Math.max(1, Math.abs(zeroY - valueY));
+              return (
+                <rect
+                  key={`macd-bar-${candle.time}`}
+                  x={x - bodyWidth / 2}
+                  y={barY}
+                  width={bodyWidth}
+                  height={barHeight}
+                  className={value >= 0 ? "macd-hist-up" : "macd-hist-down"}
+                />
+              );
+            })
+          : null}
 
         {overlays.ma20 && ma20Path ? <path d={ma20Path} className="ma20-line" /> : null}
         {overlays.ma50 && ma50Path ? <path d={ma50Path} className="ma50-line" /> : null}
         {overlays.ma200 && ma200Path ? <path d={ma200Path} className="ma200-line" /> : null}
         {overlays.bbUpper && bbUpperPath ? <path d={bbUpperPath} className="bb-upper-line" /> : null}
         {overlays.bbLower && bbLowerPath ? <path d={bbLowerPath} className="bb-lower-line" /> : null}
+        {overlays.macd ? (
+          <>
+            <path d={buildLinePath(macdSeries.macd, xAt, yForMacd)} className="macd-line" />
+            <path d={buildLinePath(macdSeries.signal, xAt, yForMacd)} className="macd-signal-line" />
+          </>
+        ) : null}
         {crosshairX !== null ? (
           <line
             x1={crosshairX}
             y1={padding.top}
             x2={crosshairX}
-            y2={overlays.volume ? volumeBottom : pricePanelBottom}
+            y2={chartBottom}
             className="chart-crosshair-line"
           />
         ) : null}
@@ -429,13 +621,20 @@ function CandlestickChart({
 
         {priceTicks.map((tick, index) => (
           <text key={`price-tick-${index}`} x={6} y={tick.y + 4} className="chart-label">
-            {formatPrice(tick.value)}
+            {formatAxisPrice(tick.value)}
           </text>
         ))}
         {overlays.volume
           ? volumeTicks.map((tick, index) => (
               <text key={`volume-tick-${index}`} x={6} y={tick.y + 4} className="chart-label">
-                Vol {Math.round(tick.value).toLocaleString()}
+                Vol {formatVolumeCompact(tick.value)}
+              </text>
+            ))
+          : null}
+        {overlays.macd
+          ? macdTicks.map((tick, index) => (
+              <text key={`macd-tick-${index}`} x={6} y={tick.y + 4} className="chart-label">
+                M {formatAxisPrice(tick.value)}
               </text>
             ))
           : null}
@@ -478,6 +677,18 @@ function CandlestickChart({
             BB Lower
           </span>
         ) : null}
+        {overlays.macd ? (
+          <>
+            <span className="legend-item">
+              <span className="legend-dot legend-macd" />
+              MACD
+            </span>
+            <span className="legend-item">
+              <span className="legend-dot legend-macd-signal" />
+              Signal
+            </span>
+          </>
+        ) : null}
       </div>
     </div>
   );
@@ -490,6 +701,7 @@ export default function TickerChartPage() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [overlays, setOverlays] = useState<OverlayState>({
     volume: true,
+    macd: true,
     ma20: true,
     ma50: true,
     ma200: true,

@@ -435,10 +435,36 @@ tbody td {
 .bb-upper-line,
 .bb-lower-line {
   fill: none;
-  stroke: #7c3aed;
+  stroke: #d92d20;
   stroke-width: 1.5;
-  stroke-dasharray: none;
+  stroke-dasharray: 2 4;
   opacity: 1;
+}
+
+.chart-macd-zero {
+  stroke: #9ca3af;
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.macd-line {
+  fill: none;
+  stroke: #111111;
+  stroke-width: 1.5;
+}
+
+.macd-signal-line {
+  fill: none;
+  stroke: #d92d20;
+  stroke-width: 1.5;
+}
+
+.macd-hist-up {
+  fill: rgb(19 115 51 / 55%);
+}
+
+.macd-hist-down {
+  fill: rgb(19 115 51 / 55%);
 }
 
 .chart-legend {
@@ -476,5 +502,13 @@ tbody td {
 
 .legend-bb-upper,
 .legend-bb-lower {
-  background: #7c3aed;
+  background: #d92d20;
+}
+
+.legend-macd {
+  background: #111111;
+}
+
+.legend-macd-signal {
+  background: #d92d20;
 }
