@@ -90,6 +90,57 @@ function formatVolume(value: number | null): string {
   return value.toLocaleString();
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function renderPriceRange(low: number | null, high: number | null, close: number | null) {
+  if (low === null || high === null || close === null) {
+    return "—";
+  }
+
+  const span = high - low;
+  const closePositionPercent =
+    span <= 0
+      ? 50
+      : clamp(((close - low) / span) * 100, 0, 100);
+
+  return (
+    <div className="price-range-cell" title={`Low ${formatNumber(low)} | High ${formatNumber(high)}`}>
+      <div className="price-range-track">
+        {/* Marker position shows where current close sits within 52-week range. */}
+        <span className="price-range-close-marker" style={{ left: `${closePositionPercent}%` }} />
+      </div>
+      <div className="price-range-labels">
+        <span className="price-range-label-value">{formatNumber(low)}</span>
+        <span className="price-range-label-value">{formatNumber(high)}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatMarketCapOrNetAssets(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
+
+  const absolute = Math.abs(value);
+  // Compact large figures so this column stays readable in a dense table.
+  if (absolute >= 1_000_000_000_000) {
+    return `${(value / 1_000_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 })}T`;
+  }
+  if (absolute >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 })}B`;
+  }
+  if (absolute >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 })}M`;
+  }
+  if (absolute >= 1_000) {
+    return `${(value / 1_000).toLocaleString(undefined, { maximumFractionDigits: 2 })}K`;
+  }
+  return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
 function formatPercent(value: number | null): string {
   if (value === null) {
     return "—";
@@ -268,6 +319,8 @@ export function StockComparisonTable({
                   </button>
                 </th>
                 <th>Volume</th>
+                <th>52-Wk Range</th>
+                <th>Market Cap / Net Assets</th>
                 <th>
                   <button type="button" className="sort-button" onClick={() => toggleSort("peRatio")}>
                     P/E{sortLabel("peRatio")}
@@ -278,6 +331,8 @@ export function StockComparisonTable({
                     P/B{sortLabel("pbRatio")}
                   </button>
                 </th>
+                <th>Beta</th>
+                <th>Sharpe Ratio</th>
                 <th>
                   <button
                     type="button"
@@ -292,15 +347,6 @@ export function StockComparisonTable({
                     RSI (14){sortLabel("rsi14")}
                   </button>
                 </th>
-                <th>MA (5)</th>
-                <th>MA (20)</th>
-                <th>MA (50)</th>
-                <th>MACD</th>
-                <th>MACD Signal</th>
-                <th>MACD Hist</th>
-                <th>BB Upper</th>
-                <th>BB Middle</th>
-                <th>BB Lower</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -343,21 +389,22 @@ export function StockComparisonTable({
                       {formatSignedPercent(row?.changePercent ?? null)}
                     </td>
                     <td>{formatVolume(row?.volume ?? null)}</td>
+                    <td>
+                      {renderPriceRange(
+                        row?.fiftyTwoWeekLow ?? null,
+                        row?.fiftyTwoWeekHigh ?? null,
+                        row?.close ?? null,
+                      )}
+                    </td>
+                    <td>{formatMarketCapOrNetAssets(row?.marketCapOrNetAssets ?? null)}</td>
                     <td>{formatNumber(row?.peRatio ?? null)}</td>
                     <td>{formatNumber(row?.pbRatio ?? null)}</td>
+                    <td>{formatNumber(row?.beta ?? null)}</td>
+                    <td>{formatNumber(row?.sharpeRatio ?? null)}</td>
                     <td>{formatPercent(row?.dividendOrDistributionYield ?? null)}</td>
                     <td className={rsiClassName(row?.rsi14 ?? null)}>
                       {formatNumber(row?.rsi14 ?? null)}
                     </td>
-                    <td>{formatNumber(row?.ma5 ?? null)}</td>
-                    <td>{formatNumber(row?.ma20 ?? null)}</td>
-                    <td>{formatNumber(row?.ma50 ?? null)}</td>
-                    <td>{formatNumber(row?.macd ?? null)}</td>
-                    <td>{formatNumber(row?.macdSignal ?? null)}</td>
-                    <td>{formatNumber(row?.macdHistogram ?? null)}</td>
-                    <td>{formatNumber(row?.bbUpper ?? null)}</td>
-                    <td>{formatNumber(row?.bbMiddle ?? null)}</td>
-                    <td>{formatNumber(row?.bbLower ?? null)}</td>
                     <td>
                       <div className="action-buttons">
                         <button

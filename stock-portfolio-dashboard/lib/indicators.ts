@@ -140,3 +140,45 @@ export function calculateBollingerBands(
     lower: middle - standardDeviationMultiplier * deviation,
   };
 }
+
+export function calculateSharpeRatio(
+  prices: number[],
+  riskFreeAnnualRate = 0.02,
+  periodsPerYear = 252,
+): number | null {
+  if (prices.length < 3) {
+    return null;
+  }
+
+  const dailyReturns: number[] = [];
+  for (let index = 1; index < prices.length; index += 1) {
+    const previous = prices[index - 1];
+    const current = prices[index];
+    if (previous === 0) {
+      continue;
+    }
+    dailyReturns.push(current / previous - 1);
+  }
+
+  if (dailyReturns.length < 2) {
+    return null;
+  }
+
+  // Convert annual risk-free rate into a daily equivalent for excess returns.
+  const dailyRiskFree = (1 + riskFreeAnnualRate) ** (1 / periodsPerYear) - 1;
+  const excessReturns = dailyReturns.map((dailyReturn) => dailyReturn - dailyRiskFree);
+  const averageExcess =
+    excessReturns.reduce((sum, value) => sum + value, 0) / excessReturns.length;
+  const variance =
+    excessReturns.reduce((sum, value) => {
+      const distance = value - averageExcess;
+      return sum + distance * distance;
+    }, 0) /
+    (excessReturns.length - 1);
+  const standardDeviation = Math.sqrt(variance);
+  if (!Number.isFinite(standardDeviation) || standardDeviation === 0) {
+    return null;
+  }
+
+  return (averageExcess / standardDeviation) * Math.sqrt(periodsPerYear);
+}

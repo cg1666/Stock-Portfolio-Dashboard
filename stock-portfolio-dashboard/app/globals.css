@@ -270,6 +270,46 @@ tbody td {
   color: inherit;
 }
 
+.price-range-cell {
+  min-width: 150px;
+  padding-top: 0.15rem;
+}
+
+.price-range-track {
+  position: relative;
+  height: 3px;
+  border-radius: 999px;
+  background: #5f6975;
+  margin-top: 0.15rem;
+}
+
+.price-range-close-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 9px;
+  height: 9px;
+  border-radius: 999px 999px 999px 0;
+  background: #86d2ff;
+  border: 1px solid rgb(255 255 255 / 45%);
+  box-shadow: 0 0 0 1px rgb(11 17 26 / 24%);
+  rotate: -45deg;
+}
+
+.price-range-labels {
+  margin-top: 0.25rem;
+  display: flex;
+  justify-content: space-between;
+  color: #dce3ec;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.price-range-label-value {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
 .chart-page-header {
   display: flex;
   justify-content: space-between;
@@ -447,6 +487,12 @@ tbody td {
   stroke-dasharray: 2 4;
 }
 
+.chart-rsi-guide {
+  stroke: #9ca3af;
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
 .macd-line {
   fill: none;
   stroke: #111111;
@@ -465,6 +511,12 @@ tbody td {
 
 .macd-hist-down {
   fill: rgb(19 115 51 / 55%);
+}
+
+.rsi-line {
+  fill: none;
+  stroke: #6f42c1;
+  stroke-width: 1.5;
 }
 
 .chart-legend {
@@ -511,4 +563,8 @@ tbody td {
 
 .legend-macd-signal {
   background: #d92d20;
+}
+
+.legend-rsi {
+  background: #6f42c1;
 }

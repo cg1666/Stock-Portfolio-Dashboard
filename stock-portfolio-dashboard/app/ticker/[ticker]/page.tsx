@@ -16,6 +16,7 @@ type Candle = {
 type OverlayState = {
   volume: boolean;
   macd: boolean;
+  rsi: boolean;
   ma20: boolean;
   ma50: boolean;
   ma200: boolean;
@@ -35,6 +36,7 @@ const PERIOD_OPTIONS: Array<{ value: PeriodOption; label: string }> = [
 const OVERLAY_OPTIONS: Array<{ key: keyof OverlayState; label: string }> = [
   { key: "volume", label: "Volume" },
   { key: "macd", label: "MACD" },
+  { key: "rsi", label: "RSI(14)" },
   { key: "ma20", label: "MA20" },
   { key: "ma50", label: "MA50" },
   { key: "ma200", label: "MA200" },
@@ -165,6 +167,41 @@ function buildMacdSeries(candles: Candle[]) {
   return { macd, signal, histogram };
 }
 
+function buildRsiSeries(candles: Candle[], period = 14): Array<number | null> {
+  const rsiSeries: Array<number | null> = new Array(candles.length).fill(null);
+  if (candles.length <= period) {
+    return rsiSeries;
+  }
+
+  let gainSum = 0;
+  let lossSum = 0;
+  for (let index = 1; index <= period; index += 1) {
+    const delta = candles[index].close - candles[index - 1].close;
+    if (delta >= 0) {
+      gainSum += delta;
+    } else {
+      lossSum += Math.abs(delta);
+    }
+  }
+
+  let averageGain = gainSum / period;
+  let averageLoss = lossSum / period;
+  rsiSeries[period] = averageLoss === 0 ? 100 : 100 - 100 / (1 + averageGain / averageLoss);
+
+  for (let index = period + 1; index < candles.length; index += 1) {
+    const delta = candles[index].close - candles[index - 1].close;
+    const gain = delta > 0 ? delta : 0;
+    const loss = delta < 0 ? Math.abs(delta) : 0;
+
+    // Keep RSI smooth and stable by using Wilder's rolling averages.
+    averageGain = (averageGain * (period - 1) + gain) / period;
+    averageLoss = (averageLoss * (period - 1) + loss) / period;
+    rsiSeries[index] = averageLoss === 0 ? 100 : 100 - 100 / (1 + averageGain / averageLoss);
+  }
+
+  return rsiSeries;
+}
+
 function buildLinePath(
   values: Array<number | null>,
   xAt: (index: number) => number,
@@ -242,7 +279,8 @@ function CandlestickChart({
   const innerHeight = height - padding.top - padding.bottom;
   const panelGap = 12;
   const lowerPanelHeight = 92;
-  const enabledLowerPanels = (overlays.volume ? 1 : 0) + (overlays.macd ? 1 : 0);
+  const enabledLowerPanels =
+    (overlays.volume ? 1 : 0) + (overlays.macd ? 1 : 0) + (overlays.rsi ? 1 : 0);
   const totalLowerHeight =
     enabledLowerPanels === 0
       ? 0
@@ -253,11 +291,16 @@ function CandlestickChart({
   const volumeTop = overlays.volume ? nextLowerPanelTop : null;
   const volumeBottom = overlays.volume && volumeTop !== null ? volumeTop + lowerPanelHeight : null;
   if (overlays.volume && volumeBottom !== null) {
-    nextLowerPanelTop = volumeBottom + (overlays.macd ? panelGap : 0);
+    nextLowerPanelTop = volumeBottom + (overlays.macd || overlays.rsi ? panelGap : 0);
   }
   const macdTop = overlays.macd ? nextLowerPanelTop : null;
   const macdBottom = overlays.macd && macdTop !== null ? macdTop + lowerPanelHeight : null;
-  const chartBottom = macdBottom ?? volumeBottom ?? pricePanelBottom;
+  if (overlays.macd && macdBottom !== null) {
+    nextLowerPanelTop = macdBottom + (overlays.rsi ? panelGap : 0);
+  }
+  const rsiTop = overlays.rsi ? nextLowerPanelTop : null;
+  const rsiBottom = overlays.rsi && rsiTop !== null ? rsiTop + lowerPanelHeight : null;
+  const chartBottom = rsiBottom ?? macdBottom ?? volumeBottom ?? pricePanelBottom;
   const step = innerWidth / candles.length;
   const bodyWidth = Math.max(3, Math.min(8, step * 0.65));
 
@@ -303,11 +346,20 @@ function CandlestickChart({
     const ratio = (macdTopValue - value) / (macdTopValue - macdBottomValue || 1);
     return macdTop + ratio * lowerPanelHeight;
   };
+  const yForRsi = (value: number) => {
+    if (rsiTop === null || rsiBottom === null) {
+      return pricePanelBottom;
+    }
+    const bounded = Math.max(0, Math.min(100, value));
+    const ratio = (100 - bounded) / 100;
+    return rsiTop + ratio * lowerPanelHeight;
+  };
 
   const ma20 = buildSmaSeries(candles, 20);
   const ma50 = buildSmaSeries(candles, 50);
   const ma200 = buildSmaSeries(candles, 200);
   const bollingerBands = buildBollingerBandSeries(candles, 20, 2);
+  const rsiSeries = buildRsiSeries(candles, 14);
   const xAt = (index: number) => padding.left + index * step + step / 2;
   const ma20Path = buildLinePath(ma20, xAt, yForPrice);
   const ma50Path = buildLinePath(ma50, xAt, yForPrice);
@@ -337,12 +389,17 @@ function CandlestickChart({
     const y = (macdTop ?? pricePanelBottom) + lowerPanelHeight * ratio;
     return { value, y };
   });
+  const rsiTicks = [100, 70, 50, 30, 0].map((value) => ({
+    value,
+    y: yForRsi(value),
+  }));
   const hoveredCandle = hoverIndex === null ? null : candles[hoverIndex];
   const hoveredBbUpper = hoverIndex === null ? null : bollingerBands.upper[hoverIndex];
   const hoveredBbLower = hoverIndex === null ? null : bollingerBands.lower[hoverIndex];
   const hoveredMacd = hoverIndex === null ? null : macdSeries.macd[hoverIndex];
   const hoveredMacdSignal = hoverIndex === null ? null : macdSeries.signal[hoverIndex];
   const hoveredMacdHistogram = hoverIndex === null ? null : macdSeries.histogram[hoverIndex];
+  const hoveredRsi = hoverIndex === null ? null : rsiSeries[hoverIndex];
   const crosshairX = hoverIndex === null ? null : xAt(hoverIndex);
   const crosshairCloseY =
     hoveredCandle && crosshairX !== null ? yForPrice(hoveredCandle.close) : null;
@@ -359,6 +416,7 @@ function CandlestickChart({
         `MACD: ${hoveredMacd === null ? "—" : formatPrice(hoveredMacd)}`,
         `Signal: ${hoveredMacdSignal === null ? "—" : formatPrice(hoveredMacdSignal)}`,
         `Hist: ${hoveredMacdHistogram === null ? "—" : formatPrice(hoveredMacdHistogram)}`,
+        `RSI(14): ${hoveredRsi === null ? "—" : formatPrice(hoveredRsi)}`,
       ]
     : [];
   const longestRowLength = tooltipRows.reduce(
@@ -429,6 +487,21 @@ function CandlestickChart({
               return (
                 <line
                   key={`grid-mh-${index}`}
+                  x1={padding.left}
+                  y1={y}
+                  x2={width - padding.right}
+                  y2={y}
+                  className="chart-grid-line"
+                />
+              );
+            })
+          : null}
+        {overlays.rsi
+          ? [0, 1, 2, 3, 4].map((index) => {
+              const y = (rsiTop ?? pricePanelBottom) + (lowerPanelHeight / 4) * index;
+              return (
+                <line
+                  key={`grid-rh-${index}`}
                   x1={padding.left}
                   y1={y}
                   x2={width - padding.right}
@@ -509,6 +582,38 @@ function CandlestickChart({
             />
           </>
         ) : null}
+        {overlays.rsi && rsiTop !== null && rsiBottom !== null ? (
+          <>
+            <line
+              x1={padding.left}
+              y1={rsiTop}
+              x2={padding.left}
+              y2={rsiBottom}
+              className="chart-axis"
+            />
+            <line
+              x1={padding.left}
+              y1={rsiBottom}
+              x2={width - padding.right}
+              y2={rsiBottom}
+              className="chart-axis"
+            />
+            <line
+              x1={padding.left}
+              y1={yForRsi(70)}
+              x2={width - padding.right}
+              y2={yForRsi(70)}
+              className="chart-rsi-guide"
+            />
+            <line
+              x1={padding.left}
+              y1={yForRsi(30)}
+              x2={width - padding.right}
+              y2={yForRsi(30)}
+              className="chart-rsi-guide"
+            />
+          </>
+        ) : null}
 
         {candles.map((candle, index) => {
           const x = xAt(index);
@@ -584,6 +689,9 @@ function CandlestickChart({
             <path d={buildLinePath(macdSeries.signal, xAt, yForMacd)} className="macd-signal-line" />
           </>
         ) : null}
+        {overlays.rsi ? (
+          <path d={buildLinePath(rsiSeries, xAt, yForRsi)} className="rsi-line" fill="none" />
+        ) : null}
         {crosshairX !== null ? (
           <line
             x1={crosshairX}
@@ -638,6 +746,13 @@ function CandlestickChart({
               </text>
             ))
           : null}
+        {overlays.rsi
+          ? rsiTicks.map((tick, index) => (
+              <text key={`rsi-tick-${index}`} x={6} y={tick.y + 4} className="chart-label">
+                R {formatAxisPrice(tick.value)}
+              </text>
+            ))
+          : null}
 
         {monthTicks.map((tick, index) => (
           <text key={`month-tick-${index}`} x={tick.x - 18} y={height - 8} className="chart-label">
@@ -689,6 +804,12 @@ function CandlestickChart({
             </span>
           </>
         ) : null}
+        {overlays.rsi ? (
+          <span className="legend-item">
+            <span className="legend-dot legend-rsi" />
+            RSI(14)
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -702,6 +823,7 @@ export default function TickerChartPage() {
   const [overlays, setOverlays] = useState<OverlayState>({
     volume: true,
     macd: true,
+    rsi: true,
     ma20: true,
     ma50: true,
     ma200: true,

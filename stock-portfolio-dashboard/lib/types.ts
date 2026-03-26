@@ -7,8 +7,13 @@ export type StockRow = {
   change: number | null;
   changePercent: number | null;
   volume: number | null;
+  fiftyTwoWeekLow: number | null;
+  fiftyTwoWeekHigh: number | null;
+  marketCapOrNetAssets: number | null;
   peRatio: number | null;
   pbRatio: number | null;
+  beta: number | null;
+  sharpeRatio: number | null;
   dividendOrDistributionYield: number | null;
   rsi14: number | null;
   ma5: number | null;

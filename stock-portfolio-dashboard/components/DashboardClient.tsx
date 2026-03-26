@@ -97,7 +97,8 @@ export function DashboardClient() {
     };
 
     load();
-    const intervalId = window.setInterval(load, 10_000);
+    // Refresh every 5 seconds to keep the grid more responsive to market moves.
+    const intervalId = window.setInterval(load, 5_000);
 
     return () => {
       isCancelled = true;
