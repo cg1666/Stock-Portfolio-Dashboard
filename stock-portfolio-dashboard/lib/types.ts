@@ -32,3 +32,23 @@ export type QuotesResponse = {
   asOf: string;
   rows: StockRow[];
 };
+
+export type OptionsArbitrageRow = {
+  ticker: string;
+  exchange: string;
+  closePrice: number;
+  dividend: number;
+  exDividendDate: string | null;
+  putStrikePrice: number;
+  putAskPrice: number;
+  putLastPrice: number;
+};
+
+export type OptionsArbitrageResponse = {
+  asOf: string;
+  market: "us" | "ca";
+  scannedSymbols: number;
+  scannedTickers: string[];
+  rows: OptionsArbitrageRow[];
+  rejectedTickers: string[];
+};

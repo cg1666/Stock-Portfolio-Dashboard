@@ -114,6 +114,35 @@ type QuoteLike = {
   dividendYield?: number | null;
 };
 
+type QuoteSummaryLike = {
+  price?: {
+    regularMarketOpen?: unknown;
+    regularMarketDayLow?: unknown;
+    regularMarketDayHigh?: unknown;
+    regularMarketPrice?: unknown;
+    regularMarketChange?: unknown;
+    regularMarketChangePercent?: unknown;
+    regularMarketVolume?: unknown;
+    marketCap?: unknown;
+  };
+  summaryDetail?: {
+    fiftyTwoWeekLow?: unknown;
+    fiftyTwoWeekHigh?: unknown;
+    trailingPE?: unknown;
+    beta?: unknown;
+    trailingAnnualDividendYield?: unknown;
+    dividendYield?: unknown;
+  };
+  defaultKeyStatistics?: {
+    priceToBook?: unknown;
+    beta?: unknown;
+  };
+  financialData?: {
+    totalAssets?: unknown;
+    netAssets?: unknown;
+  };
+};
+
 function readMarketCapOrNetAssets(quote: QuoteLike): number | null {
   // Prefer market cap for equities, then fall back to fund asset fields when available.
   return (
@@ -146,6 +175,36 @@ function toQuoteMetrics(quote: QuoteLike): QuoteMetrics {
   };
 }
 
+function toQuoteMetricsFromSummary(summary: QuoteSummaryLike): QuoteMetrics {
+  const price = summary.price ?? {};
+  const detail = summary.summaryDetail ?? {};
+  const stats = summary.defaultKeyStatistics ?? {};
+  const financial = summary.financialData ?? {};
+
+  return {
+    open: readNumberLike(price.regularMarketOpen),
+    low: readNumberLike(price.regularMarketDayLow),
+    high: readNumberLike(price.regularMarketDayHigh),
+    close: readNumberLike(price.regularMarketPrice),
+    change: readNumberLike(price.regularMarketChange),
+    changePercent: readNumberLike(price.regularMarketChangePercent),
+    volume: readNumberLike(price.regularMarketVolume),
+    fiftyTwoWeekLow: readNumberLike(detail.fiftyTwoWeekLow),
+    fiftyTwoWeekHigh: readNumberLike(detail.fiftyTwoWeekHigh),
+    marketCapOrNetAssets:
+      readNumberLike(price.marketCap) ??
+      readNumberLike(financial.totalAssets) ??
+      readNumberLike(financial.netAssets),
+    peRatio: readNumberLike(detail.trailingPE),
+    pbRatio: readNumberLike(stats.priceToBook),
+    beta: readNumberLike(detail.beta) ?? readNumberLike(stats.beta),
+    dividendOrDistributionYield: readYieldPercent(
+      detail.trailingAnnualDividendYield,
+      detail.dividendYield,
+    ),
+  };
+}
+
 async function runWithConcurrency<TItem, TResult>(
   items: TItem[],
   limit: number,
@@ -168,14 +227,25 @@ async function runWithConcurrency<TItem, TResult>(
 }
 
 async function fetchQuoteMetrics(symbol: string) {
-  const quote = (await yahooFinance.quote(symbol)) as QuoteLike;
-
-  const beta = await fetchBetaFallback(symbol, readNumberLike(quote.beta));
-
-  return {
-    ...toQuoteMetrics(quote),
-    beta,
-  };
+  try {
+    const quote = (await yahooFinance.quote(symbol)) as QuoteLike;
+    const beta = await fetchBetaFallback(symbol, readNumberLike(quote.beta));
+    return {
+      ...toQuoteMetrics(quote),
+      beta,
+    };
+  } catch {
+    // Fallback to quoteSummary when quote endpoint is throttled.
+    const summary = (await yahooFinance.quoteSummary(symbol, {
+      modules: ["price", "summaryDetail", "defaultKeyStatistics", "financialData"],
+    })) as QuoteSummaryLike;
+    const summaryMetrics = toQuoteMetricsFromSummary(summary);
+    const beta = await fetchBetaFallback(symbol, summaryMetrics.beta);
+    return {
+      ...summaryMetrics,
+      beta,
+    };
+  }
 }
 
 async function fetchBetaFallback(
@@ -341,10 +411,6 @@ async function buildStockRow(
         row.beta = await fetchBetaFallback(alternateTicker, null);
       }
     }
-  } else if (batchQuoteError) {
-    // Avoid retry storms when Yahoo is rate-limiting the quote endpoint.
-    quoteFailed = true;
-    quoteError = batchQuoteError;
   } else {
     try {
       Object.assign(row, await fetchQuoteMetrics(ticker));
@@ -361,6 +427,9 @@ async function buildStockRow(
         quoteFailed = true;
         quoteError = readErrorMessage(error);
       }
+    }
+    if (quoteFailed && batchQuoteError) {
+      quoteError = quoteError || batchQuoteError;
     }
   }
 

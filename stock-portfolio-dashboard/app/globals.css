@@ -300,7 +300,7 @@ tbody td {
   margin-top: 0.25rem;
   display: flex;
   justify-content: space-between;
-  color: #dce3ec;
+  color: inherit;
   font-size: 0.8rem;
   line-height: 1;
 }
@@ -308,6 +308,8 @@ tbody td {
 .price-range-label-value {
   font-weight: 700;
   letter-spacing: 0.01em;
+  /* Force dark blue for 52-week low/high labels even inside themed table containers. */
+  color: #0b3d91 !important;
 }
 
 .chart-page-header {
@@ -321,6 +323,74 @@ tbody td {
   text-decoration: none;
   display: inline-flex;
   align-items: center;
+}
+
+/* Tab styles for ticker page sections (starting with Stocks and ETFs). */
+.ticker-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+}
+
+.ticker-tab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.ticker-tab.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgb(0 113 227 / 10%);
+}
+
+.ticker-tab-panel {
+  display: block;
+}
+
+.options-dropdowns {
+  display: grid;
+  gap: 0.85rem;
+  max-width: 420px;
+}
+
+.options-dropdown-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.options-dropdown-row label {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.options-actions {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.options-condition-text {
+  font-weight: 600;
+}
+
+.options-results-panel {
+  margin-top: 0.75rem;
+}
+
+.options-rejected-list {
+  margin-top: 0.35rem;
+  color: var(--foreground);
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .chart-period-row {
