@@ -33,6 +33,12 @@ function formatMoney(value: number): string {
   });
 }
 
+function formatSize(value: number): string {
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: 0,
+  });
+}
+
 function formatShortDate(value: string | null): string {
   if (!value) {
     return "—";
@@ -65,6 +71,10 @@ export function DashboardClient() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [optionsRows, setOptionsRows] = useState<OptionsArbitrageRow[]>([]);
   const [optionsDateSort, setOptionsDateSort] = useState<"asc" | "desc">("desc");
+  const [optionsTickerSort, setOptionsTickerSort] = useState<"asc" | "desc">("asc");
+  const [optionsSortField, setOptionsSortField] = useState<"ticker" | "exDividendDate">(
+    "exDividendDate",
+  );
   const [optionsIsLoading, setOptionsIsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [hasAutoScannedOptions, setHasAutoScannedOptions] = useState(false);
@@ -72,6 +82,8 @@ export function DashboardClient() {
   const [optionsScannedTickers, setOptionsScannedTickers] = useState<string[]>([]);
   const [optionsAsOf, setOptionsAsOf] = useState<string | null>(null);
   const [optionsRejectedTickers, setOptionsRejectedTickers] = useState<string[]>([]);
+  const [optionsFailedTickers, setOptionsFailedTickers] = useState<string[]>([]);
+  const [optionsScanLimit, setOptionsScanLimit] = useState(10000);
   const activePortfolioId = activePortfolio?.id ?? "";
   const activeTickers = activePortfolio?.tickers ?? EMPTY_TICKERS;
 
@@ -143,12 +155,12 @@ export function DashboardClient() {
     try {
       setOptionsIsLoading(true);
       setOptionsError(null);
-      const response = await fetch("/api/options/arbitrage?market=us&maxScan=200", {
+      const response = await fetch(`/api/options/arbitrage?market=us&maxScan=${optionsScanLimit}`, {
         cache: "no-store",
       });
       const data = (await response.json()) as OptionsArbitrageResponse | { error?: string };
       if (!response.ok) {
-        throw new Error(data.error || "Failed to scan NYSE options.");
+        throw new Error(data.error || "Failed to scan US options.");
       }
 
       setOptionsRows(Array.isArray(data.rows) ? data.rows : []);
@@ -156,17 +168,19 @@ export function DashboardClient() {
       setOptionsRejectedTickers(
         Array.isArray(data.rejectedTickers) ? data.rejectedTickers : [],
       );
+      setOptionsFailedTickers(Array.isArray(data.failedTickers) ? data.failedTickers : []);
       setOptionsScannedSymbols(typeof data.scannedSymbols === "number" ? data.scannedSymbols : 0);
       setOptionsAsOf(typeof data.asOf === "string" ? data.asOf : null);
     } catch (scanError) {
-      const message = scanError instanceof Error ? scanError.message : "Unable to scan NYSE options.";
+      const message = scanError instanceof Error ? scanError.message : "Unable to scan US options.";
       setOptionsError(message);
       setOptionsScannedTickers([]);
       setOptionsRejectedTickers([]);
+      setOptionsFailedTickers([]);
     } finally {
       setOptionsIsLoading(false);
     }
-  }, []);
+  }, [optionsScanLimit]);
 
   useEffect(() => {
     // Auto-scan only once; repeated retries can overwhelm Yahoo and break quote loading.
@@ -180,17 +194,29 @@ export function DashboardClient() {
   const sortedOptionsRows = useMemo(() => {
     const rows = [...optionsRows];
     rows.sort((left, right) => {
+      const tickerCompare = left.ticker.localeCompare(right.ticker);
       const leftDate = left.exDividendDate ? new Date(left.exDividendDate).getTime() : Number.NEGATIVE_INFINITY;
       const rightDate = right.exDividendDate
         ? new Date(right.exDividendDate).getTime()
         : Number.NEGATIVE_INFINITY;
-      if (leftDate === rightDate) {
-        return left.ticker.localeCompare(right.ticker);
+      const dateCompare = leftDate === rightDate ? 0 : optionsDateSort === "asc" ? leftDate - rightDate : rightDate - leftDate;
+
+      if (optionsSortField === "exDividendDate") {
+        // When date sort is active, date drives the table order and ticker only breaks ties.
+        if (dateCompare !== 0) {
+          return dateCompare;
+        }
+        return optionsTickerSort === "asc" ? tickerCompare : -tickerCompare;
       }
-      return optionsDateSort === "asc" ? leftDate - rightDate : rightDate - leftDate;
+
+      // When ticker sort is active, ticker drives the table order and date only breaks ties.
+      if (tickerCompare !== 0) {
+        return optionsTickerSort === "asc" ? tickerCompare : -tickerCompare;
+      }
+      return dateCompare;
     });
     return rows;
-  }, [optionsRows, optionsDateSort]);
+  }, [optionsRows, optionsDateSort, optionsSortField, optionsTickerSort]);
 
   if (!isMounted || !activePortfolio) {
     return (
@@ -311,6 +337,22 @@ export function DashboardClient() {
                   <option value="puts">Puts</option>
                 </select>
               </div>
+              <div className="options-dropdown-row">
+                <label htmlFor="options-scan-size-select">Scan Size</label>
+                <select
+                  id="options-scan-size-select"
+                  value={String(optionsScanLimit)}
+                  onChange={(event) => {
+                    // Restrict scan sizes to supported server-side limits only.
+                    const requestedSize = Number(event.target.value);
+                    if ([10000].includes(requestedSize)) {
+                      setOptionsScanLimit(requestedSize);
+                    }
+                  }}
+                >
+                  <option value="10000">10000</option>
+                </select>
+              </div>
             </div>
             <div className="options-actions">
               <button
@@ -322,20 +364,23 @@ export function DashboardClient() {
                 }}
                 disabled={optionsIsLoading}
               >
-                {optionsIsLoading ? "Scanning NYSE Options..." : "Scan NYSE Options"}
+                {optionsIsLoading ? "Scanning US Options..." : "Scan US Options"}
               </button>
               <p className="muted-text options-condition-text">
-                NYSE universe condition: Put Strike + Dividend &gt; Stock Close + Put Ask
+                US universe (NYSE + NASDAQ) condition: Put Strike + Dividend &gt; Stock Close + Put
+                Ask, and
+                Expiration &gt; Ex Dividend Date
               </p>
               <p className="muted-text">
                 Scanned symbols: {optionsScannedSymbols}
+                {` | Qualified: ${optionsRows.length} | Rejected: ${optionsRejectedTickers.length} | Not evaluated: ${optionsFailedTickers.length}`}
                 {optionsAsOf ? ` | Last scan: ${new Date(optionsAsOf).toLocaleTimeString()}` : ""}
               </p>
             </div>
             {optionsError ? <p className="error-text">{optionsError}</p> : null}
             <section className="panel table-panel options-results-panel">
               <div className="section-header">
-                <h2>Qualified NYSE Put Opportunities</h2>
+                <h2>Qualified US Put Opportunities</h2>
               </div>
               {optionsRows.length === 0 && !optionsIsLoading && !optionsError ? (
                 <p className="muted-text">No symbols currently meet the condition.</p>
@@ -344,36 +389,73 @@ export function DashboardClient() {
                   <table>
                     <thead>
                       <tr>
-                        <th>Ticker</th>
-                        <th>Exchange</th>
-                        <th>Close Price</th>
-                        <th>Last Price</th>
                         <th>
                           <button
                             type="button"
                             className="sort-button"
-                            onClick={() =>
-                              // Toggle date direction so newest/oldest ex-dividend dates are easy to compare.
-                              setOptionsDateSort((prev) => (prev === "asc" ? "desc" : "asc"))
-                            }
+                            onClick={() => {
+                              // Make ticker the primary sort field, then toggle A-Z / Z-A.
+                              setOptionsSortField("ticker");
+                              setOptionsTickerSort((prev) => (prev === "asc" ? "desc" : "asc"));
+                            }}
                           >
-                            Ex Dividend Date {optionsDateSort === "asc" ? "↑" : "↓"}
+                            Ticker
+                            {optionsSortField === "ticker"
+                              ? optionsTickerSort === "asc"
+                                ? " ↑"
+                                : " ↓"
+                              : ""}
                           </button>
                         </th>
+                        <th>Exchange</th>
+                        <th>Close Price</th>
+                        <th>Put Ask</th>
+                        <th>Buy Total</th>
+                        <th>Ask Size</th>
+                        <th>
+                          <button
+                            type="button"
+                            className="sort-button"
+                            onClick={() => {
+                              // Make ex-dividend date the primary sort field, then toggle direction.
+                              setOptionsSortField("exDividendDate");
+                              setOptionsDateSort((prev) => (prev === "asc" ? "desc" : "asc"));
+                            }}
+                          >
+                            Ex Dividend Date
+                            {optionsSortField === "exDividendDate"
+                              ? optionsDateSort === "asc"
+                                ? " ↑"
+                                : " ↓"
+                              : ""}
+                          </button>
+                        </th>
+                        <th>Expiration</th>
                         <th>Put Strike Price</th>
                         <th>Dividend</th>
+                        <th>Sell Total</th>
+                        <th className="profit-cell">Profit</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sortedOptionsRows.map((row) => (
-                        <tr key={`${row.ticker}-${row.putStrikePrice}-${row.putLastPrice}`}>
+                        <tr key={`${row.ticker}-${row.putStrikePrice}-${row.putAskPrice}`}>
                           <td className="ticker-cell">{row.ticker}</td>
                           <td>{row.exchange}</td>
                           <td>{formatMoney(row.closePrice)}</td>
-                          <td>{formatMoney(row.putLastPrice)}</td>
+                          <td>{formatMoney(row.putAskPrice)}</td>
+                          <td>{formatMoney(row.closePrice + row.putAskPrice)}</td>
+                          <td>{formatSize(row.putAskSize)}</td>
                           <td>{formatShortDate(row.exDividendDate)}</td>
+                          <td>{formatShortDate(row.putExpirationDate)}</td>
                           <td>{formatMoney(row.putStrikePrice)}</td>
                           <td>{formatMoney(row.dividend)}</td>
+                          <td>{formatMoney(row.putStrikePrice + row.dividend)}</td>
+                          <td className="profit-cell">
+                            {formatMoney(
+                              row.putStrikePrice + row.dividend - (row.closePrice + row.putAskPrice),
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -395,6 +477,19 @@ export function DashboardClient() {
                   <div className="options-rejected-list">
                     {optionsRejectedTickers.join(", ")}
                   </div>
+                </>
+              )}
+            </section>
+            <section className="panel table-panel options-results-panel">
+              <div className="section-header">
+                <h2>Scanned Tickers Not Evaluated (Data/API Issues)</h2>
+              </div>
+              {optionsFailedTickers.length === 0 ? (
+                <p className="muted-text">All scanned tickers were evaluated successfully.</p>
+              ) : (
+                <>
+                  <p className="muted-text">Count: {optionsFailedTickers.length}</p>
+                  <div className="options-rejected-list">{optionsFailedTickers.join(", ")}</div>
                 </>
               )}
             </section>

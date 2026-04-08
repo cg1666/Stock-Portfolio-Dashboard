@@ -393,6 +393,11 @@ tbody td {
   word-break: break-word;
 }
 
+.profit-cell {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .chart-period-row {
   display: flex;
   flex-wrap: wrap;

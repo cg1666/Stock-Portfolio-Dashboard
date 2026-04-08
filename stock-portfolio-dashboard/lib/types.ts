@@ -39,8 +39,10 @@ export type OptionsArbitrageRow = {
   closePrice: number;
   dividend: number;
   exDividendDate: string | null;
+  putExpirationDate: string | null;
   putStrikePrice: number;
   putAskPrice: number;
+  putAskSize: number;
   putLastPrice: number;
 };
 
@@ -51,4 +53,5 @@ export type OptionsArbitrageResponse = {
   scannedTickers: string[];
   rows: OptionsArbitrageRow[];
   rejectedTickers: string[];
+  failedTickers: string[];
 };
